@@ -2,7 +2,7 @@
 
 Developed with Unreal Engine 5
 
-This uses the Neural Network Inference (NNI) plugin by Epic Games and Microsoft to run the yolov8n onnx model in Unreal Engine 5. 
+This uses the Neural Network Inference (NNI) plugin by Epic Games and Microsoft to run the yolov8n onnx model in Unreal Engine 5. It can easily be extended to use other models.
 
 I used code from here to read and process frames in Unreal Engine asynchronously: https://github.com/TimmHess/UnrealImageCapture
 
