@@ -7,7 +7,11 @@
 		{
 			"Name": "UENeuralNetwork",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine",
+				"NeuralNetworkInference"
+			]
 		}
 	],
 	"Plugins": [
