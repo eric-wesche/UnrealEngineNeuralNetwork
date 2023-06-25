@@ -63,24 +63,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Segmentation Setup")
 		UMaterial* PostProcessMaterial = nullptr;
 
-	// todo: place below fields in a struct
-	// count of total frames captured
-	int frameCount = 1;
-	// capture every frameMod frames
-	int frameMod = 1;
-
-
-	//should save images
-	bool saveImages = false;
-
-	static const FModelImage modelImage;
-	static UNeuralNetwork* neuralNetwork;
-	static UMyNeuralNetwork* myNeuralNetwork;
-
 private:
-	FScreenImage screenImage = { 0 };	
-
-protected:
 	// RenderRequest Queue
 	TQueue<FRenderRequest*> RenderRequestQueue;
 	// inference task queue
@@ -88,12 +71,22 @@ protected:
 	// current inference task
 	FAsyncTask<AsyncInferenceTask>* CurrentInferenceTask = nullptr;
 
+	FScreenImage ScreenImage = { 0 };
+	const FModelImage ModelImage = { 640, 480 };
+	UNeuralNetwork* neuralNetwork = nullptr;
+	UMyNeuralNetwork* myNeuralNetwork = nullptr;
+
+	// todo: place below fields in a struct
+	// count of total frames captured
+	int frameCount = 1;
+	// capture every frameMod frames
+	int frameMod = 5;
+	//should save images
+	bool saveImages = false;
 
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
-	void SetupColorCaptureComponent(USceneCaptureComponent2D* captureComponent);
-	void RunAsyncInferenceTask(const TArray<FColor> RawImage, const int32 ScreenImageWidth, const int32 ScreenImageHeight);
 
 public:	
 	// Called every frame
@@ -108,11 +101,16 @@ public:
 	//get neural network
 	UFUNCTION(BlueprintCallable, Category = "ImageCapture", meta = (AllowPrivateAccess = "true"))
 		UNeuralNetwork* getNeuralNetwork();
+
+private:
+	void SetupColorCaptureComponent(USceneCaptureComponent2D* captureComponent);
+	void RunAsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage, const FModelImage ModelImage, 
+		UMyNeuralNetwork* MyNeuralNetwork);
 };
 
 class AsyncInferenceTask : public FNonAbandonableTask {
 public:
-	AsyncInferenceTask(const TArray<FColor> RawImage, const int32 ScreenImageWidth, const int32 ScreenImageHeight);
+	AsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage, const FModelImage ModelImage, UMyNeuralNetwork* MyNeuralNetwork);
 
 	~AsyncInferenceTask();
 
@@ -121,10 +119,11 @@ public:
 		RETURN_QUICK_DECLARE_CYCLE_STAT(AsyncInferenceTask, STATGROUP_ThreadPoolAsyncTasks);
 	}
 
-protected:
+private:
 	TArray<FColor> RawImageCopy;
-	int32 ScreenImageWidth = 640;
-	int32 ScreenImageHeight = 480;
+	FScreenImage ScreenImage;
+	FModelImage ModelImage;
+	UMyNeuralNetwork* MyNeuralNetwork;
 
 private:
 	//	void ArrayFColorToUint8(const TArray<FColor>& RawImage, TArray<uint8>& InputImageCPU, int32 Width, int32 Height);
