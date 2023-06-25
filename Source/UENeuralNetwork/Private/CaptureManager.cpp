@@ -20,10 +20,6 @@
 #include <ThirdParty/OpenCV/include/opencv2/core.hpp>
 #include "PostOpenCVHeaders.h"
 
-// set static variables
-UNeuralNetwork* UCaptureManager::neuralNetwork = nullptr;
-UMyNeuralNetwork* UCaptureManager::myNeuralNetwork = nullptr;
-const FModelImage UCaptureManager::modelImage = { 640, 480 };
 
 // Sets default values for this component's properties
 UCaptureManager::UCaptureManager()
@@ -37,6 +33,7 @@ UCaptureManager::UCaptureManager()
 void UCaptureManager::BeginPlay()
 {
     Super::BeginPlay();
+
     //return if ColorCaptureComponents is not set
     if (!ColorCaptureComponents) {
         UE_LOG(LogTemp, Warning, TEXT("ColorCaptureComponents not set"));
@@ -86,9 +83,9 @@ void UCaptureManager::SetupColorCaptureComponent(USceneCaptureComponent2D* captu
 
     // Setup the RenderTarget capture format
     renderTarget2D->InitAutoFormat(256, 256); // some random format, got crashing otherwise
-    int32 frameWidht = 640;
+    int32 frameWidth = 640;
     int32 frameHeight = 480;
-    renderTarget2D->InitCustomFormat(frameWidht, frameHeight, PF_B8G8R8A8, true); // PF_B8G8R8A8 disables HDR which will boost storing to disk due to less image information
+    renderTarget2D->InitCustomFormat(frameWidth, frameHeight, PF_B8G8R8A8, true); // PF_B8G8R8A8 disables HDR which will boost storing to disk due to less image information
     renderTarget2D->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
     renderTarget2D->bGPUSharedFlag = true; // demand buffer on GPU
 
@@ -123,7 +120,7 @@ void UCaptureManager::CaptureColorNonBlocking(USceneCaptureComponent2D* CaptureC
 
     int32 width = renderTargetResource->GetSizeXY().X;
     int32 height = renderTargetResource->GetSizeXY().Y;
-    screenImage = { width, height };
+    ScreenImage = { width, height };
 
     // Setup GPU command
     FReadSurfaceContext readSurfaceContext = {
@@ -198,7 +195,7 @@ void UCaptureManager::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 
                 // create and enqueue new inference task
                 FAsyncTask<AsyncInferenceTask>* MyTask =
-                    new FAsyncTask<AsyncInferenceTask>(nextRenderRequest->Image, screenImage.width, screenImage.height);
+                    new FAsyncTask<AsyncInferenceTask>(nextRenderRequest->Image, ScreenImage, ModelImage, myNeuralNetwork);
                 InferenceTaskQueue.Enqueue(MyTask);
 
                 // Delete the first element from RenderQueue
@@ -211,15 +208,18 @@ void UCaptureManager::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 }
 
 //create function for run inference task. call this when get the frame
-void UCaptureManager::RunAsyncInferenceTask(const TArray<FColor> RawImage, const int32 ScreenImageWidth, const int32 ScreenImageHeight) {
-    (new FAutoDeleteAsyncTask<AsyncInferenceTask>(RawImage, ScreenImageWidth, ScreenImageHeight))->StartBackgroundTask();
+void UCaptureManager::RunAsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage _ScreenImage, const FModelImage _ModelImage, 
+    UMyNeuralNetwork* MyNeuralNetwork) {
+    (new FAutoDeleteAsyncTask<AsyncInferenceTask>(RawImage, _ScreenImage, _ModelImage, MyNeuralNetwork))->StartBackgroundTask();
 }
 
 //initialize image
-AsyncInferenceTask::AsyncInferenceTask(const TArray<FColor> RawImage, const int32 ScreenImageWidth, const int32 ScreenImageHeight) {
-    RawImageCopy = RawImage;
-    this->ScreenImageWidth = ScreenImageWidth;
-    this->ScreenImageHeight = ScreenImageHeight;
+AsyncInferenceTask::AsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage,
+    const FModelImage ModelImage, UMyNeuralNetwork* MyNeuralNetwork) {
+    this->RawImageCopy = RawImage;
+    this->ScreenImage = ScreenImage;
+    this->ModelImage = ModelImage;
+    this->MyNeuralNetwork = MyNeuralNetwork;
 }
 
 AsyncInferenceTask::~AsyncInferenceTask() {
@@ -234,16 +234,13 @@ void AsyncInferenceTask::DoWork() {
     //convert image to uint8
     TArray<uint8> InputImageCPU;
 
-    ArrayFColorToUint8(RawImageCopy, InputImageCPU, ScreenImageWidth, ScreenImageHeight);
+    ArrayFColorToUint8(RawImageCopy, InputImageCPU, ScreenImage.width, ScreenImage.height);
 
     //declare model input image
     TArray<float> ModelInputImage;
 
-    //use capture static screenImage
-    FScreenImage screenImage = FScreenImage{ this->ScreenImageWidth, this->ScreenImageHeight };
-
     //resize image to match model
-    ResizeScreenImageToMatchModel(ModelInputImage, InputImageCPU, UCaptureManager::modelImage, screenImage);
+    ResizeScreenImageToMatchModel(ModelInputImage, InputImageCPU, ModelImage, ScreenImage);
 
     //declare model output image
     TArray<uint8> ModelOutputImage;
@@ -298,7 +295,7 @@ void AsyncInferenceTask::ResizeScreenImageToMatchModel(TArray<float>& ModelInput
 }
 
 void AsyncInferenceTask::RunModel(TArray<float>& ModelInputImage, TArray<uint8>& ModelOutputImage) {
-    check(UCaptureManager::myNeuralNetwork);
+    check(MyNeuralNetwork);
     ModelOutputImage.Reset();
-    UCaptureManager::myNeuralNetwork->URunModel(ModelInputImage, ModelOutputImage);
+    MyNeuralNetwork->URunModel(ModelInputImage, ModelOutputImage);
 }
