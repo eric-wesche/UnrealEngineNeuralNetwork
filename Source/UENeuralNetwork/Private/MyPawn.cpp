@@ -62,7 +62,7 @@ AMyPawn::AMyPawn()
 	MySceneCapture->SetupAttachment(StaticMeshComp);
 	//MySceneCapture->SetRelativeRotation(FRotator(0.0f, 90.0f, -90.0f));
 	//MySceneCapture->SetRelativeLocation(FVector(10.0f, 10.0f, 0.0f));
-
+	// MySceneCapture->
 	//init capture manager
 	MyCaptureManager = CreateDefaultSubobject<UCaptureManager>(TEXT("MyCaptureManager"));
 
@@ -74,7 +74,7 @@ AMyPawn::AMyPawn()
 		TEXT("/Script/NeuralNetworkInference.NeuralNetwork'/Game/Models/yolov8n_16_640_480.yolov8n_16_640_480'")));
 	NeuralNetwork->SetSynchronousMode(ENeuralSynchronousMode::Synchronous);
 	// set neural network
-	MyCaptureManager->setNeuralNetwork(NeuralNetwork);
+	MyCaptureManager->SetNeuralNetwork(NeuralNetwork);
 
 	// Set this pawn to be controlled by the lowest-numbered player when game starts.
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
@@ -89,12 +89,20 @@ AMyPawn::AMyPawn()
 void AMyPawn::BeginPlay()
 {
 	Super::BeginPlay();
+	// Draw Circle
+	// DrawDebugCircle(GetWorld(), GetActorLocation(), 100.0f, 32, FColor::Red, true, 100.0f, 0, 5.0f, FVector(0, 1, 0), FVector(1, 0, 0), false);
+	// GetActorLocation();
+
+
 }
 
 // Called every frame
 void AMyPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	// DrawDebugBox(GetWorld(), GetActorLocation(), FVector(100.0f, 100.0f, 0.0f), FColor::Red, false, 1.0f, 0, 0.0f);
+	// print actor location
+	// UE_LOG(LogTemp, Warning, TEXT("Actor Location: %s"), *GetActorLocation().ToString());
 }
 
 // Called to bind functionality to input
