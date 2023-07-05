@@ -12,8 +12,13 @@ Saved
 *.suo
 *.xcodeproj
 *.xcworkspace
-Content
+
+Content/*
+!Content/ThirdPerson/
+Content/ThirdPerson/*
+!Content/ThirdPerson/Blueprints/
 
 Plugins/Developer/RiderLink
 
 .idea
+/Platforms/HoloLens/Config/HoloLensEngine.ini
