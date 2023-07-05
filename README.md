@@ -18,4 +18,4 @@ See demo.mp4 or below gif for 14 second demo showing the bounding boxes that yol
 
 # Setup
 
-Set the Default GameMode to UENeuralNetworkGameMode (the cpp class). The humanoid character asset is from using the Third Person Template (cpp, include Starter Content) and the white cylinder is from Starter Content.  
+Set the Default GameMode to UENeuralNetworkGameMode (the cpp class). The humanoid character asset and map are from using the Third Person Template (cpp, include Starter Content) and the white cylinder is from Starter Content.  
