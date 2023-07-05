@@ -13,6 +13,14 @@ class AUENeuralNetworkGameMode : public AGameModeBase
 
 public:
 	AUENeuralNetworkGameMode();
+
+	static UMaterialInstanceDynamic* GMDynamicMaterialInstance;
+
+	UFUNCTION(BlueprintPure)
+	UMaterialInstanceDynamic* GetDynamicMaterialInstance()
+	{
+		return GMDynamicMaterialInstance;
+	}
 };
 
 

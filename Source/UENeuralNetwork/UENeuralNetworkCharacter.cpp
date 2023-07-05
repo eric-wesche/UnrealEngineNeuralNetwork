@@ -10,7 +10,6 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 
-#include "Engine/SceneCapture2D.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "CaptureManager.h"
 
@@ -50,28 +49,27 @@ AUENeuralNetworkCharacter::AUENeuralNetworkCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
-	//create scene capture component and attach to head socket
+	// create scene capture component and attach to head socket
 	MySceneCapture = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("MySceneCapture"));
 	MySceneCapture->SetupAttachment(GetMesh(), "head");
-	//set rotation
+	// set rotation
 	MySceneCapture->SetRelativeRotation(FRotator(0.0f, 90.0f, -90.0f));
-	//set location
+	// set location
 	MySceneCapture->SetRelativeLocation(FVector(10.0f, 10.0f, 0.0f));
 
-	//init capture manager
-	//MyCaptureManager = NewObject<UCaptureManager>((UObject*)this, UCaptureManager::StaticClass(), FName(TEXT("CaptureManager")), EObjectFlags::RF_Transient);
-	//create default subobject capturemanager
+	// init capture manager
+	// MyCaptureManager = NewObject<UCaptureManager>((UObject*)this, UCaptureManager::StaticClass(), FName(TEXT("CaptureManager")), EObjectFlags::RF_Transient);
+	// create default subobject capturemanager
 	MyCaptureManager = CreateDefaultSubobject<UCaptureManager>(TEXT("MyCaptureManager"));
-
 	check(MyCaptureManager);
 	MyCaptureManager->ColorCaptureComponents = MySceneCapture;
 	
-	//get neural network asset from content browser
+	// get neural network asset from content browser
 	UNeuralNetwork* NeuralNetwork = Cast<UNeuralNetwork>(StaticLoadObject(UNeuralNetwork::StaticClass(), NULL,
 		TEXT("/Script/NeuralNetworkInference.NeuralNetwork'/Game/Models/yolov8n_16_640_480.yolov8n_16_640_480'")));
 	NeuralNetwork->SetSynchronousMode(ENeuralSynchronousMode::Synchronous);
 	// set neural network
-	MyCaptureManager->setNeuralNetwork(NeuralNetwork);
+	MyCaptureManager->SetNeuralNetwork(NeuralNetwork);
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)

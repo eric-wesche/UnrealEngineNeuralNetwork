@@ -11,6 +11,12 @@
 #include "MyNeuralNetwork.h"
 
 #include "Components/ActorComponent.h"
+
+#include "Materials/MaterialInstanceDynamic.h"
+
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/CanvasRenderTarget2D.h"
+
 #include "CaptureManager.generated.h"
 
 // if declare this class below a place where it is used in initialization, it will cause compile error. so forward declare it here.
@@ -31,7 +37,7 @@ struct FRenderRequest {
 };
 
 USTRUCT()
-struct FScreenImage {
+struct FScreenImageProperties {
 	GENERATED_BODY()
 
 	int32 width;
@@ -39,7 +45,7 @@ struct FScreenImage {
 };
 
 USTRUCT()
-struct FModelImage {
+struct FModelImageProperties {
 	GENERATED_BODY()
 
 	int32 width;
@@ -59,10 +65,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Capture")
 		USceneCaptureComponent2D* ColorCaptureComponents;
 
-	// PostProcessMaterial used for segmentation
-	UPROPERTY(EditAnywhere, Category = "Segmentation Setup")
-		UMaterial* PostProcessMaterial = nullptr;
+	
+	// Dynamic Material instance used to display on the hud
+	static UMaterialInstanceDynamic* DynamicMaterialInstance;
 
+	UFUNCTION(BlueprintPure)
+	UMaterialInstanceDynamic* GetDynamicMaterialInstance()
+	{
+		return DynamicMaterialInstance;
+	}
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Capture")
+		UTextureRenderTarget2D* RenderTarget2D;
+	
+	static UCanvasRenderTarget2D* BoundingBoxRenderTarget2D;
+	static UMyNeuralNetwork::FBoxCoordinates BoundingBoxCoordinates;
+
+	UFUNCTION()
+		void OnCanvasRenderTargetUpdate2(UCanvas* Canvas, int32 Width, int32 Height);
 private:
 	// RenderRequest Queue
 	TQueue<FRenderRequest*> RenderRequestQueue;
@@ -71,8 +91,8 @@ private:
 	// current inference task
 	FAsyncTask<AsyncInferenceTask>* CurrentInferenceTask = nullptr;
 
-	FScreenImage ScreenImage = { 0 };
-	const FModelImage ModelImage = { 640, 480 };
+	FScreenImageProperties ScreenImageProperties = { 0 };
+	const FModelImageProperties ModelImageProperties = { 640, 480 };
 	UNeuralNetwork* neuralNetwork = nullptr;
 	UMyNeuralNetwork* myNeuralNetwork = nullptr;
 
@@ -83,6 +103,8 @@ private:
 	int frameMod = 5;
 	//should save images
 	bool saveImages = false;
+
+	int CanvasDrawCount=0;
 
 protected:
 	// Called when the game starts
@@ -96,21 +118,21 @@ public:
 		void CaptureColorNonBlocking(USceneCaptureComponent2D* CaptureComponent, bool IsSegmentation = false);
 
 	UFUNCTION(BlueprintCallable, Category = "ImageCapture", meta = (AllowPrivateAccess = "true"))
-		void setNeuralNetwork(UNeuralNetwork* Model);
+		void SetNeuralNetwork(UNeuralNetwork* Model);
 
 	//get neural network
 	UFUNCTION(BlueprintCallable, Category = "ImageCapture", meta = (AllowPrivateAccess = "true"))
-		UNeuralNetwork* getNeuralNetwork();
+		UNeuralNetwork* GetNeuralNetwork();
 
 private:
-	void SetupColorCaptureComponent(USceneCaptureComponent2D* captureComponent);
-	void RunAsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage, const FModelImage ModelImage, 
+	void SetupColorCaptureComponent(USceneCaptureComponent2D* CaptureComponent);
+	void RunAsyncInferenceTask(const TArray<FColor>& RawImage, const FScreenImageProperties ScreenImage, const FModelImageProperties ModelImage, 
 		UMyNeuralNetwork* MyNeuralNetwork);
 };
 
 class AsyncInferenceTask : public FNonAbandonableTask {
 public:
-	AsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage, const FModelImage ModelImage, UMyNeuralNetwork* MyNeuralNetwork);
+	AsyncInferenceTask(const TArray<FColor>& RawImage, const FScreenImageProperties ScreenImage, const FModelImageProperties ModelImage, UMyNeuralNetwork* MyNeuralNetwork);
 
 	~AsyncInferenceTask();
 
@@ -121,14 +143,14 @@ public:
 
 private:
 	TArray<FColor> RawImageCopy;
-	FScreenImage ScreenImage;
-	FModelImage ModelImage;
+	FScreenImageProperties ScreenImage;
+	FModelImageProperties ModelImage;
 	UMyNeuralNetwork* MyNeuralNetwork;
 
 private:
 	//	void ArrayFColorToUint8(const TArray<FColor>& RawImage, TArray<uint8>& InputImageCPU, int32 Width, int32 Height);
 	void ResizeScreenImageToMatchModel(TArray<float>& ModelInputImage, TArray<uint8>& InputImageCPU,
-		FModelImage modelImage, FScreenImage screenImage);
+		FModelImageProperties modelImage, FScreenImageProperties screenImage);
 	void RunModel(TArray<float>& ModelInputImage, TArray<uint8>& ModelOutputImage);
 
 

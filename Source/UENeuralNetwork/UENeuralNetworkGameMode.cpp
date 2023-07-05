@@ -4,6 +4,8 @@
 #include "UENeuralNetworkCharacter.h"
 #include "UObject/ConstructorHelpers.h"
 
+UMaterialInstanceDynamic* AUENeuralNetworkGameMode::GMDynamicMaterialInstance = nullptr;
+
 AUENeuralNetworkGameMode::AUENeuralNetworkGameMode()
 {
 	// set default pawn class to our Blueprinted character

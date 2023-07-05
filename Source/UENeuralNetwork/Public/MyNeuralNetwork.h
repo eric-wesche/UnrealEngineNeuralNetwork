@@ -18,4 +18,15 @@ public:
 		UNeuralNetwork* Network = nullptr;
 	UMyNeuralNetwork();
 	void URunModel(TArray<float>& image, TArray<uint8>& results);
+
+	//define struct
+	struct FBoxCoordinates {
+		float cx; // center x
+		float cy; // center y
+		float width;
+		float height;
+		float x1; // top left x
+		float y1; // top left y
+		float confidence = 0.0f;
+	};
 };

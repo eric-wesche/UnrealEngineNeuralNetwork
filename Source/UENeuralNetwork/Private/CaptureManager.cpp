@@ -3,7 +3,6 @@
 
 #include "CaptureManager.h"
 
-
 #include "Engine.h"
 
 #include "Components/SceneCaptureComponent2D.h"
@@ -14,12 +13,18 @@
 #include "Modules/ModuleManager.h"
 
 #include "PreOpenCVHeaders.h"
-#include "OpenCVHelper.h"
 #include <ThirdParty/OpenCV/include/opencv2/imgproc.hpp>
-#include <ThirdParty/OpenCV/include/opencv2/highgui/highgui.hpp>
 #include <ThirdParty/OpenCV/include/opencv2/core.hpp>
-#include "PostOpenCVHeaders.h"
 
+#include "Kismet/KismetRenderingLibrary.h"
+#include "Misc/AssertionMacros.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UENeuralNetwork/UENeuralNetworkGameMode.h"
+
+// statics
+UMaterialInstanceDynamic* UCaptureManager::DynamicMaterialInstance = nullptr;
+UCanvasRenderTarget2D* UCaptureManager::BoundingBoxRenderTarget2D = nullptr;
+UMyNeuralNetwork::FBoxCoordinates UCaptureManager::BoundingBoxCoordinates = UMyNeuralNetwork::FBoxCoordinates();
 
 // Sets default values for this component's properties
 UCaptureManager::UCaptureManager()
@@ -58,7 +63,7 @@ namespace {
     }
 }
 
-void UCaptureManager::setNeuralNetwork(UNeuralNetwork* Model)
+void UCaptureManager::SetNeuralNetwork(UNeuralNetwork* Model)
 {
     //log model
     UE_LOG(LogTemp, Warning, TEXT("Model: %s"), *Model->GetName());
@@ -69,44 +74,76 @@ void UCaptureManager::setNeuralNetwork(UNeuralNetwork* Model)
     UCaptureManager::myNeuralNetwork->Network = Model;
 }
 
-UNeuralNetwork* UCaptureManager::getNeuralNetwork()
+UNeuralNetwork* UCaptureManager::GetNeuralNetwork()
 {
     return UCaptureManager::neuralNetwork;
 }
 
-void UCaptureManager::SetupColorCaptureComponent(USceneCaptureComponent2D* captureComponent) {
-    // Create RenderTargets
-    UTextureRenderTarget2D* renderTarget2D = NewObject<UTextureRenderTarget2D>();
-
-    // Set FrameWidth and FrameHeight
-    renderTarget2D->TargetGamma = 1.2f;// for Vulkan //GEngine->GetDisplayGamma(); // for DX11/12
-
-    // Setup the RenderTarget capture format
-    renderTarget2D->InitAutoFormat(256, 256); // some random format, got crashing otherwise
-    int32 frameWidth = 640;
-    int32 frameHeight = 480;
-    renderTarget2D->InitCustomFormat(frameWidth, frameHeight, PF_B8G8R8A8, true); // PF_B8G8R8A8 disables HDR which will boost storing to disk due to less image information
-    renderTarget2D->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
-    renderTarget2D->bGPUSharedFlag = true; // demand buffer on GPU
-
-    // Assign RenderTarget
-    captureComponent->TextureTarget = renderTarget2D;
-
-    // Set Camera Properties
-    captureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
-    captureComponent->ShowFlags.SetTemporalAA(true);
-    // lookup more showflags in the UE4 documentation..
+void UCaptureManager::OnCanvasRenderTargetUpdate2(UCanvas* Canvas, int32 Width, int32 Height) {
+    float x = BoundingBoxCoordinates.x1;
+    float y = BoundingBoxCoordinates.y1;
+    float width = BoundingBoxCoordinates.width;
+    float height = BoundingBoxCoordinates.height;
+    Canvas->K2_DrawBox(FVector2D(x, y), FVector2D(width, height), 5, FLinearColor::Red);
 }
 
+/**
+ * @brief Initializes the render targets and material
+ */
+void UCaptureManager::SetupColorCaptureComponent(USceneCaptureComponent2D* CaptureComponent) {
+    UObject* worldContextObject = GetWorld();
+
+    // scene capture component render target (stores frame that is then pulled from gpu to cpu for neural network input)
+    RenderTarget2D = NewObject<UTextureRenderTarget2D>();
+    RenderTarget2D->InitAutoFormat(256, 256); // some random format, got crashing otherwise
+    RenderTarget2D->InitCustomFormat(ModelImageProperties.width, ModelImageProperties.height, PF_B8G8R8A8, true); // PF_B8G8R8A8 disables HDR which will boost storing to disk due to less image information
+    RenderTarget2D->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+    RenderTarget2D->bGPUSharedFlag = true; // demand buffer on GPU
+    RenderTarget2D->TargetGamma = 1.2f;// for Vulkan //GEngine->GetDisplayGamma(); // for DX11/12
+
+    // add render target to scene capture component
+    CaptureComponent->TextureTarget = RenderTarget2D;
+
+    // setup material and add render target to material
+    UMaterial* material = LoadObject<UMaterial>(nullptr, TEXT("/Script/Engine.Material'/Game/ThirdPerson/Blueprints/NewTextureRenderTarget2D_Mat.NewTextureRenderTarget2D_Mat'"));
+    UWorld* world = GetWorld();
+    AGameModeBase* gameMode = world->GetAuthGameMode();
+    AUENeuralNetworkGameMode* myGameMode = Cast<AUENeuralNetworkGameMode>(gameMode);
+    myGameMode->GMDynamicMaterialInstance = UMaterialInstanceDynamic::Create(material, nullptr);;  
+    myGameMode->GMDynamicMaterialInstance->SetTextureParameterValue("TextureParam", RenderTarget2D);
+
+    // bounding box
+    BoundingBoxRenderTarget2D = UCanvasRenderTarget2D::CreateCanvasRenderTarget2D(
+    worldContextObject, UCanvasRenderTarget2D::StaticClass(), 256, 256);
+    BoundingBoxRenderTarget2D->OnCanvasRenderTargetUpdate.AddDynamic(this, &UCaptureManager::OnCanvasRenderTargetUpdate2);
+    BoundingBoxRenderTarget2D->InitAutoFormat(256, 256); // some random format, got crashing otherwise
+    BoundingBoxRenderTarget2D->InitCustomFormat(ModelImageProperties.width, ModelImageProperties.height, PF_B8G8R8A8, true); 
+    BoundingBoxRenderTarget2D->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+    BoundingBoxRenderTarget2D->bGPUSharedFlag = true; // demand buffer on GPU
+    BoundingBoxRenderTarget2D->TargetGamma = 1.2f;// for Vulkan //GEngine->GetDisplayGamma(); // for DX11/12
+    myGameMode->GMDynamicMaterialInstance->SetTextureParameterValue("BoundingBoxTextureParam", BoundingBoxRenderTarget2D);
+
+    // Set Camera Properties
+    CaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
+    CaptureComponent->ShowFlags.SetTemporalAA(true);
+}
+
+/**
+ * @brief Sends request to gpu to read frame (send from gpu to cpu)
+ * @param CaptureComponent 
+ * @param IsSegmentation 
+ */
 void UCaptureManager::CaptureColorNonBlocking(USceneCaptureComponent2D* CaptureComponent, bool IsSegmentation) {
     if (!IsValid(CaptureComponent)) {
         UE_LOG(LogTemp, Error, TEXT("CaptureColorNonBlocking: CaptureComponent was not valid!"));
         return;
     }
 
-    // Get RenderConterxt
     FTextureRenderTargetResource* renderTargetResource = CaptureComponent->TextureTarget->GameThread_GetRenderTargetResource();
-
+    
+    const int32& rtx = CaptureComponent->TextureTarget->SizeX;
+    const int32& rty = CaptureComponent->TextureTarget->SizeY;
+    
     struct FReadSurfaceContext {
         FRenderTarget* SrcRenderTarget;
         TArray<FColor>* OutData;
@@ -118,33 +155,18 @@ void UCaptureManager::CaptureColorNonBlocking(USceneCaptureComponent2D* CaptureC
     FRenderRequest* renderRequest = new FRenderRequest();
     renderRequest->isPNG = IsSegmentation;
 
-    int32 width = renderTargetResource->GetSizeXY().X;
-    int32 height = renderTargetResource->GetSizeXY().Y;
-    ScreenImage = { width, height };
+    int32 width = rtx; 
+    int32 height = rty;
+    ScreenImageProperties = { width, height };
 
-    // Setup GPU command
+    // Setup GPU command. send the same command again but use the render target that is in the widget, and modify it to add the box
     FReadSurfaceContext readSurfaceContext = {
         renderTargetResource,
-        &(renderRequest->Image),
-        FIntRect(0,0,renderTargetResource->GetSizeXY().X, renderTargetResource->GetSizeXY().Y),
+        &(renderRequest->Image), // store frame in render request
+        FIntRect(0,0,width, height),
         FReadSurfaceDataFlags(RCM_UNorm, CubeFace_MAX)
     };
-
-    // Send command to GPU
-   /* Up to version 4.22 use this
-    ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER(
-        SceneDrawCompletion,//ReadSurfaceCommand,
-        FReadSurfaceContext, Context, readSurfaceContext,
-    {
-        RHICmdList.ReadSurfaceData(
-            Context.SrcRenderTarget->GetRenderTargetTexture(),
-            Context.Rect,
-            *Context.OutData,
-            Context.Flags
-        );
-    });
-    */
-    // Above 4.22 use this
+    
     ENQUEUE_RENDER_COMMAND(SceneDrawCompletion)(
         [readSurfaceContext](FRHICommandListImmediate& RHICmdList) {
             RHICmdList.ReadSurfaceData(
@@ -155,20 +177,26 @@ void UCaptureManager::CaptureColorNonBlocking(USceneCaptureComponent2D* CaptureC
             );
         });
 
-    // Notifiy new task in RenderQueue
+    // Add new task to RenderQueue
     RenderRequestQueue.Enqueue(renderRequest);
 
     // Set RenderCommandFence
-    // should pass true or false?
+    // TODO: should pass true or false?
     renderRequest->RenderFence.BeginFence(false);
 }
 
-// Called every frame
+/**
+ * @brief If scene component is not running every frame, and this function is, then it will be reading the same data
+ * from the texture over and over. TODO: check if this is true, and ensure no issues.
+ * @param DeltaTime 
+ * @param TickType 
+ * @param ThisTickFunction
+ */
 void UCaptureManager::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    if (!InferenceTaskQueue.IsEmpty()) {
+    if (!InferenceTaskQueue.IsEmpty()) { // Check if there is a task in queue and start it, and delete the old one
         if (CurrentInferenceTask == nullptr || CurrentInferenceTask->IsDone()) {
             FAsyncTask<AsyncInferenceTask>* task = nullptr;
             InferenceTaskQueue.Dequeue(task);
@@ -178,44 +206,45 @@ void UCaptureManager::TickComponent(float DeltaTime, ELevelTick TickType, FActor
         }
     }
 
-    if (frameCount++ % frameMod == 0) {
+    if (frameCount++ % frameMod == 0) { // capture every frameMod frame
         // Capture Color Image (adds render request to queue)
         CaptureColorNonBlocking(ColorCaptureComponents, false);
         frameCount = 1;
     }
-    // Read pixels once RenderFence is completed
+    // If there is a render task in the queue, read pixels once RenderFence is completed
     if (!RenderRequestQueue.IsEmpty()) {
-
         // Peek the next RenderRequest from queue
         FRenderRequest* nextRenderRequest = nullptr;
         RenderRequestQueue.Peek(nextRenderRequest);
-
-        if (nextRenderRequest) { //nullptr check
+        if (nextRenderRequest) { // nullptr check
             if (nextRenderRequest->RenderFence.IsFenceComplete()) { // Check if rendering is done, indicated by RenderFence
-
+                // we have the image, now we draw a box around the detected object and display it on the screen
+                // render image to render target
+                UKismetRenderingLibrary::ExportRenderTarget(GEngine->GetWorld(), RenderTarget2D, "C:\\ueimages", "test.png");
+                // renderTarget2D->UpdateResource(); // if update before saving to image it will be black
                 // create and enqueue new inference task
                 FAsyncTask<AsyncInferenceTask>* MyTask =
-                    new FAsyncTask<AsyncInferenceTask>(nextRenderRequest->Image, ScreenImage, ModelImage, myNeuralNetwork);
+                    new FAsyncTask<AsyncInferenceTask>(nextRenderRequest->Image, ScreenImageProperties, ModelImageProperties, myNeuralNetwork);
                 InferenceTaskQueue.Enqueue(MyTask);
-
                 // Delete the first element from RenderQueue
                 RenderRequestQueue.Pop();
                 delete nextRenderRequest;
-
             }
         }
     }
+
+    BoundingBoxRenderTarget2D->UpdateResource();
 }
 
-//create function for run inference task. call this when get the frame
-void UCaptureManager::RunAsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage _ScreenImage, const FModelImage _ModelImage, 
+// create function for run inference task. call this when get the frame
+void UCaptureManager::RunAsyncInferenceTask(const TArray<FColor>& RawImage, const FScreenImageProperties _ScreenImage, const FModelImageProperties _ModelImage, 
     UMyNeuralNetwork* MyNeuralNetwork) {
     (new FAutoDeleteAsyncTask<AsyncInferenceTask>(RawImage, _ScreenImage, _ModelImage, MyNeuralNetwork))->StartBackgroundTask();
 }
 
-//initialize image
-AsyncInferenceTask::AsyncInferenceTask(const TArray<FColor> RawImage, const FScreenImage ScreenImage,
-    const FModelImage ModelImage, UMyNeuralNetwork* MyNeuralNetwork) {
+// initialize image
+AsyncInferenceTask::AsyncInferenceTask(const TArray<FColor>& RawImage, const FScreenImageProperties ScreenImage,
+    const FModelImageProperties ModelImage, UMyNeuralNetwork* MyNeuralNetwork) {
     this->RawImageCopy = RawImage;
     this->ScreenImage = ScreenImage;
     this->ModelImage = ModelImage;
@@ -226,14 +255,13 @@ AsyncInferenceTask::~AsyncInferenceTask() {
     //UE_LOG(LogTemp, Warning, TEXT("AsyncTaskDone inference"));
 }
 
-//do inference
+// do inference
 void AsyncInferenceTask::DoWork() {
     //log do work
     //UE_LOG(LogTemp, Warning, TEXT("AsyncTaskDoWork inference"));
 
     //convert image to uint8
     TArray<uint8> InputImageCPU;
-
     ArrayFColorToUint8(RawImageCopy, InputImageCPU, ScreenImage.width, ScreenImage.height);
 
     //declare model input image
@@ -250,7 +278,7 @@ void AsyncInferenceTask::DoWork() {
 }
 
 void AsyncInferenceTask::ResizeScreenImageToMatchModel(TArray<float>& ModelInputImage, TArray<uint8>& InputImageCPU,
-    FModelImage modelImage, FScreenImage screenImage)
+    FModelImageProperties modelImage, FScreenImageProperties screenImage)
 {
     // Create image from StylizedImage object
     cv::Mat inputImage(screenImage.height, screenImage.width, CV_8UC3, InputImageCPU.GetData());
@@ -295,7 +323,12 @@ void AsyncInferenceTask::ResizeScreenImageToMatchModel(TArray<float>& ModelInput
 }
 
 void AsyncInferenceTask::RunModel(TArray<float>& ModelInputImage, TArray<uint8>& ModelOutputImage) {
-    check(MyNeuralNetwork);
+    // check(MyNeuralNetwork);
+    if(MyNeuralNetwork == nullptr)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("MyNeuralNetwork is null"));
+        return;
+    }
     ModelOutputImage.Reset();
     MyNeuralNetwork->URunModel(ModelInputImage, ModelOutputImage);
 }
