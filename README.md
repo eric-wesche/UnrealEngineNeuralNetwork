@@ -13,3 +13,5 @@ This thread helped me understand the outputs of yolov8: https://github.com/ultra
 # Demo
 
 See demo.mp4 or below gif for 14 second demo showing the bounding boxes that yolov8 nano predicts using an image of width 640px and height 480px (this is what is input into the model and also the size of the image in the top left of the screen with the bounding boxes). The camera is on the front of the white cylinder. 
+
+![](https://github.com/eric-wesche/UnrealEngineNeuralNetwork/blob/master/demo.gif)
