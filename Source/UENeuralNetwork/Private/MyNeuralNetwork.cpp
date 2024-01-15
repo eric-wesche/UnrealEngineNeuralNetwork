@@ -7,6 +7,11 @@
 UMyNeuralNetwork::UMyNeuralNetwork()
 {
 	Network = nullptr;
+
+	FString RelativePath = FPaths::GameSourceDir();
+	RelativePath = FPaths::Combine(RelativePath, TEXT("UENeuralNetwork"), TEXT("Public"), TEXT("coco_classes.txt"));
+	CocoDatasetClassIntToStringMap = ReadFileToMap(RelativePath);
+	UCaptureManager::CocoDatasetClassIntToStringMap = CocoDatasetClassIntToStringMap;
 }
 
 uint8 BBFloatToColor(float value) {
@@ -19,6 +24,9 @@ void UMyNeuralNetwork::URunModel(TArray<float>& image, TArray<uint8>& results)
 		UE_LOG(LogTemp, Error, TEXT("Neural Network not loaded."));
 		return;
 	}
+
+	// Clear the bounding box coordinates map
+	BoundingBoxCoordinatesMap.Empty();
 
 	// start timer to see how long this function takes
 	double startSeconds = FPlatformTime::Seconds();
@@ -71,43 +79,105 @@ void UMyNeuralNetwork::URunModel(TArray<float>& image, TArray<uint8>& results)
 		}
 		// print the predictions (should be 80)
 		for (int k = 0; k < predictions.Num(); k++) {
-			auto cell = predictions[k];
-			if (cell > boundingBoxCoordinates[k].confidence) {
-				boundingBoxCoordinates[k].confidence = cell;
-
-				// get cx, cy, w, h from the tensor output
-				float cx = boxCoordinates[0];
-				float cy = boxCoordinates[1];
-				float w = boxCoordinates[2];
-				float h = boxCoordinates[3];
-				boundingBoxCoordinates[k].cx = cx;
-				boundingBoxCoordinates[k].cy = cy;
-				boundingBoxCoordinates[k].width = w;
-				boundingBoxCoordinates[k].height = h;
-				// get the top left corner of the bounding box given the center (cx,cy) and width and height
-				float x1 = cx - (w / 2);
-				float y1 = cy - (h / 2);
-				boundingBoxCoordinates[k].x1 = x1;
-				boundingBoxCoordinates[k].y1 = y1;
-
-				if(highestClass == -1 || cell>boundingBoxCoordinates[highestClass].confidence){
-					highestClass = k;
-				}
+			float ClassConfidencePrediction = predictions[k];
+			// log conf
+			if(ClassConfidencePrediction > ConfidenceThreshold)
+			{
+				FBoxCoordinates coords = FBoxCoordinates();
+				coords.confidence = ClassConfidencePrediction;
+				coords.cx = boxCoordinates[0];
+				coords.cy = boxCoordinates[1];
+				coords.width = boxCoordinates[2];
+				coords.height = boxCoordinates[3];
+				coords.x1 = coords.cx - (coords.width / 2);
+				coords.y1 = coords.cy - (coords.height / 2);
+				BoundingBoxCoordinatesMap.FindOrAdd(k).Add(coords);
 			}
+			// auto cell = predictions[k];
+			// if (cell > boundingBoxCoordinates[k].confidence) {
+			// 	boundingBoxCoordinates[k].confidence = cell;
+			//
+			// 	// get cx, cy, w, h from the tensor output
+			// 	float cx = boxCoordinates[0];
+			// 	float cy = boxCoordinates[1];
+			// 	float w = boxCoordinates[2];
+			// 	float h = boxCoordinates[3];
+			// 	boundingBoxCoordinates[k].cx = cx;
+			// 	boundingBoxCoordinates[k].cy = cy;
+			// 	boundingBoxCoordinates[k].width = w;
+			// 	boundingBoxCoordinates[k].height = h;
+			// 	// get the top left corner of the bounding box given the center (cx,cy) and width and height
+			// 	float x1 = cx - (w / 2);
+			// 	float y1 = cy - (h / 2);
+			// 	boundingBoxCoordinates[k].x1 = x1;
+			// 	boundingBoxCoordinates[k].y1 = y1;
+			//
+			// 	if(highestClass == -1 || cell>boundingBoxCoordinates[highestClass].confidence){
+			// 		highestClass = k;
+			// 	}
+			// }
 		}
 	}
-	
-	if(highestClass > -1)
-	{
-		FBoxCoordinates coords = boundingBoxCoordinates[highestClass];
-		UCaptureManager::BoundingBoxCoordinates = coords;
 
-		// print highest class prediction and its probability
-		UE_LOG(LogTemp, Warning, TEXT("class: %d, probability: %f"), highestClass, boundingBoxCoordinates[highestClass].confidence);
-	}
+	// if(highestClass > -1)
+	// {
+	// 	FBoxCoordinates coords = boundingBoxCoordinates[highestClass];
+	// 	UCaptureManager::BoundingBoxCoordinates = coords;
+	//
+	// 	// print highest class prediction and its probability
+	// 	// UE_LOG(LogTemp, Warning, TEXT("class: %d, probability: %f"), highestClass, boundingBoxCoordinates[highestClass].confidence);
+	// }
+
+	UCaptureManager::BoundingBoxCoordinatesMap = BoundingBoxCoordinatesMap;
 	
 	// print time elapsed for this function
 	double secondsElapsed = FPlatformTime::Seconds() - startSeconds;
 
 	//UE_LOG(LogTemp, Log, TEXT("Results created successfully in %f."), secondsElapsed)
 }
+
+TMap<int, FString> UMyNeuralNetwork::ReadFileToMap(FString FilePath)
+{
+	// Create an empty TMap with int as the key type and FString as the value type
+	TMap<int, FString> Result;
+
+	// Check if the file exists
+	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*FilePath))
+	{
+		// Create an empty FString to store the file content
+		FString FileContent;
+
+		// Load the file content to the FString
+		FFileHelper::LoadFileToString(FileContent, *FilePath);
+
+		// Split the file content by line breaks into an array of strings
+		TArray<FString> Lines;
+		FileContent.ParseIntoArray(Lines, TEXT("\n"), true);
+
+		// Loop through each line in the array
+		for (FString Line : Lines)
+		{
+			// Split the line by colon into an array of strings
+			TArray<FString> KeyValue;
+			Line.ParseIntoArray(KeyValue, TEXT(":"), true);
+
+			// Check if the array has two elements
+			if (KeyValue.Num() == 2)
+			{
+				// Convert the first element to an int and trim any whitespace
+				int Key = FCString::Atoi(*KeyValue[0].TrimStartAndEnd());
+
+				// Get the second element and trim any whitespace
+				FString Value = KeyValue[1].TrimStartAndEnd();
+
+				// Add the key-value pair to the map
+				Result.Add(Key, Value);
+			}
+		}
+	}
+
+	// Return the map
+	return Result;
+}
+
+

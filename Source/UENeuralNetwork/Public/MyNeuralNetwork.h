@@ -29,4 +29,12 @@ public:
 		float y1; // top left y
 		float confidence = 0.0f;
 	};
+
+	TMap<int, TArray<FBoxCoordinates>> BoundingBoxCoordinatesMap;
+	float ConfidenceThreshold = 0.65f;
+
+	// Define a function that takes a file path as a parameter and returns a TMap
+	static TMap<int, FString> ReadFileToMap(FString FilePath);
+
+	TMap<int, FString> CocoDatasetClassIntToStringMap;
 };
