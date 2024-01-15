@@ -80,6 +80,8 @@ public:
 	
 	static UCanvasRenderTarget2D* BoundingBoxRenderTarget2D;
 	static UMyNeuralNetwork::FBoxCoordinates BoundingBoxCoordinates;
+	static TMap<int, TArray<UMyNeuralNetwork::FBoxCoordinates>> BoundingBoxCoordinatesMap;
+	static TMap<int, FString> CocoDatasetClassIntToStringMap;
 
 	UFUNCTION()
 		void OnCanvasRenderTargetUpdate2(UCanvas* Canvas, int32 Width, int32 Height);

@@ -25,6 +25,8 @@
 UMaterialInstanceDynamic* UCaptureManager::DynamicMaterialInstance = nullptr;
 UCanvasRenderTarget2D* UCaptureManager::BoundingBoxRenderTarget2D = nullptr;
 UMyNeuralNetwork::FBoxCoordinates UCaptureManager::BoundingBoxCoordinates = UMyNeuralNetwork::FBoxCoordinates();
+TMap<int, TArray<UMyNeuralNetwork::FBoxCoordinates>> UCaptureManager::BoundingBoxCoordinatesMap = TMap<int, TArray<UMyNeuralNetwork::FBoxCoordinates>>();
+TMap<int, FString> UCaptureManager::CocoDatasetClassIntToStringMap = TMap<int, FString>();
 
 // Sets default values for this component's properties
 UCaptureManager::UCaptureManager()
@@ -80,11 +82,84 @@ UNeuralNetwork* UCaptureManager::GetNeuralNetwork()
 }
 
 void UCaptureManager::OnCanvasRenderTargetUpdate2(UCanvas* Canvas, int32 Width, int32 Height) {
-    float x = BoundingBoxCoordinates.x1;
-    float y = BoundingBoxCoordinates.y1;
-    float width = BoundingBoxCoordinates.width;
-    float height = BoundingBoxCoordinates.height;
-    Canvas->K2_DrawBox(FVector2D(x, y), FVector2D(width, height), 5, FLinearColor::Red);
+    // loop BoundingBoxCoordinatesMap and draw boxes and labels
+    // set of boxes that were drawn
+    TArray<UMyNeuralNetwork::FBoxCoordinates> drawnBoxes;
+    for(auto const& pair : BoundingBoxCoordinatesMap)
+    {
+        int classIndex = pair.Key;
+        // convert index to string
+        FString classLabel = FString::FromInt(classIndex);
+        if(CocoDatasetClassIntToStringMap.Contains(classIndex))
+        {
+            classLabel = CocoDatasetClassIntToStringMap[classIndex];
+        }
+        TArray<UMyNeuralNetwork::FBoxCoordinates> boundingBoxCoordinates = pair.Value;
+
+        // keep track of the boxes, and if there are overlapping boxes, only draw the one with the highest confidence.
+        // need to find a way of detecting overlapping boxes by comparing their coordinates
+        for(auto box: boundingBoxCoordinates)
+        {
+            FBox Box = FBox(FVector(box.x1, box.y1, 0.f), FVector(box.x1 + box.width, box.y1 + box.height, 0.f));
+            // loop through drawn boxes and get the box coordinates. Then do a calculation with current box and see if they overlap.
+            bool canDraw = true;
+            for (auto cbox : drawnBoxes)
+            {
+                // Create an FBox from the drawn box coordinates
+                FBox DrawnBox = FBox(FVector(cbox.x1, cbox.y1, 0.f), FVector(cbox.x1 + cbox.width, cbox.y1 + cbox.height, 0.f));
+
+                // Check if the boxes intersect
+                if (Box.Intersect(DrawnBox))
+                {
+                    // Do something if the boxes overlap
+                    // log the box coordinates
+                    UE_LOG(LogTemp, Warning, TEXT("Box intersects"));
+                    canDraw = false;
+                    break;
+                } else
+                {
+                }
+            }
+            if(canDraw)
+            {
+                float x = box.x1;
+                float y = box.y1;
+                float width = box.width;
+                float height = box.height;
+                Canvas->K2_DrawBox(FVector2D(x, y), FVector2D(width, height), 5, FLinearColor::Red);
+                UFont* ufont = GEngine->GetSmallFont();
+                Canvas->K2_DrawText(ufont, classLabel, FVector2D(x, y - 32), FVector2D(2, 2), FLinearColor::Green);
+                // FLinearColor TextCol(FLinearColor::Green);
+                // TextCol.A = 255;
+                // FCanvasTextItem TextItem(FVector2D(x, y - 32), FText::FromString(classLabel), ufont, TextCol);
+                // Canvas->DrawItem(TextItem);
+                drawnBoxes.Add(box);
+            }
+        }
+    }
+    
+        
+    // for(auto const& box : boundingBoxCoordinates)
+    // {
+    //     float x = box.x1;
+    //     float y = box.y1;
+    //     float width = box.width;
+    //     float height = box.height;
+    //     Canvas->K2_DrawBox(FVector2D(x, y), FVector2D(width, height), 5, FLinearColor::Red);
+    //     UFont* ufont = GEngine->GetSmallFont();
+    //     // Canvas->K2_DrawText(ufont, classLabel, FVector2D(x, y - 20), FVector2D(1, 1), FLinearColor::Green);
+    //     // draw darker and bigger text, this text was hard to see
+    //     Canvas->K2_DrawText(ufont, classLabel, FVector2D(x, y - 21), FVector2D(1.1, 1.1), FLinearColor::Green);
+    //     // make the text very bright
+    //     Canvas->K2_DrawText(ufont, classLabel, FVector2D(x, y - 22), FVector2D(2, 2), FLinearColor::Green);
+    // }
+    // float x = BoundingBoxCoordinates.x1;
+    // float y = BoundingBoxCoordinates.y1;
+    // float width = BoundingBoxCoordinates.width;
+    // float height = BoundingBoxCoordinates.height;
+    // Canvas->K2_DrawBox(FVector2D(x, y), FVector2D(width, height), 5, FLinearColor::Red);
+    // UFont* ufont = GEngine->GetSmallFont();
+    // Canvas->K2_DrawText(ufont, "Hello World", FVector2D(x, y - 20), FVector2D(1, 1), FLinearColor::Green);
 }
 
 /**
